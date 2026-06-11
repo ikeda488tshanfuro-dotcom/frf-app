@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>身体運動 FRF 計測アプリ</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;
+  font-family:system-ui,sans-serif;background:#111;color:#e0ddd6}
+
+.screen{position:fixed;inset:0;display:none;flex-direction:column;width:100%;height:100%}
+.screen.active{display:flex}
+
+/* ===== 画面1: 待機 ===== */
+#scrIdle{background:#111;align-items:center;justify-content:center;gap:16px;padding:24px}
+#scrIdle .title{font-size:15px;font-weight:500;color:#888;letter-spacing:.04em;margin-bottom:4px;text-align:center}
+#scrIdle .sub{font-size:12px;color:#555;text-align:center;line-height:1.6;max-width:280px}
+.btn-start{width:100%;max-width:320px;padding:16px;border-radius:12px;
+  border:none;background:#378add;color:#fff;font-size:17px;font-weight:600;
+  cursor:pointer;font-family:inherit}
+.btn-start:active{opacity:.8}
+
+/* ===== 画面2: 計測中 ===== */
+#scrRec{background:#000;position:fixed;inset:0;display:none}
+#scrRec.active{display:block}
+#recCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#recBar{position:absolute;top:0;left:0;height:3px;background:#378add;transition:width .2s;z-index:10;width:0%}
+#recTime{position:absolute;top:10px;right:14px;
+  font-size:13px;color:rgba(255,255,255,.4);font-variant-numeric:tabular-nums;z-index:10}
+#recStopBtn{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);
+  padding:11px 44px;border-radius:24px;border:1px solid rgba(255,255,255,.2);
+  background:rgba(255,255,255,.07);color:rgba(255,255,255,.6);
+  font-size:14px;cursor:pointer;font-family:inherit;z-index:10}
+#recStopBtn:active{opacity:.7}
+
+/* ===== 画面3: 結果 ===== */
+#scrResult{background:#f5f5f2;color:#2c2c2a;overflow-y:auto;
+  padding:16px 14px calc(env(safe-area-inset-bottom,0px) + 20px)}
+.sec-label{font-size:10px;font-weight:700;letter-spacing:.07em;
+  color:#888780;text-transform:uppercase;margin:14px 0 6px}
+.sec-label:first-child{margin-top:0}
+.param-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px}
+.pc{background:#ebe9e2;border-radius:10px;padding:10px 12px;border:0.5px solid #ccc8be}
+.pc.hi{background:#deedfb;border-color:#85b7eb}
+.pc .pl{font-size:10px;color:#888780;margin-bottom:3px}
+.pc.hi .pl{color:#185fa5}
+.pc .pv{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.pc.hi .pv{color:#185fa5}
+.pc .pu{font-size:11px;color:#888780;margin-left:2px}
+.fit-info{font-size:11px;color:#5f5e5a;line-height:1.75;white-space:pre-wrap;
+  background:#ebe9e2;border-radius:10px;padding:8px 12px;
+  border:0.5px solid #ccc8be;margin-bottom:10px}
+.tab-row{display:flex;gap:6px;margin-bottom:8px}
+.tab{flex:1;padding:7px;border-radius:8px;border:0.5px solid #ccc8be;
+  background:#ebe9e2;color:#5f5e5a;font-size:12px;cursor:pointer;
+  font-family:inherit;text-align:center}
+.tab.sel{background:#fff;color:#2c2c2a;border-color:#b4b2a9;font-weight:500}
+#bCv{display:block;width:100%;border-radius:10px;border:0.5px solid #ccc8be;
+  background:#ebe9e2;margin-bottom:14px}
+.btn-retry{width:100%;padding:13px;border-radius:10px;border:none;
+  background:#378add;color:#fff;font-size:15px;font-weight:600;
+  cursor:pointer;font-family:inherit}
+.btn-retry:active{opacity:.8}
+textarea#memoBox{
+  display:block;width:100%;
+  background:#ebe9e2;border:0.5px solid #ccc8be;border-radius:10px;
+  padding:8px 12px;font-size:13px;font-family:inherit;color:#2c2c2a;
+  resize:none;outline:none;margin-bottom:8px;line-height:1.55;
+}
+textarea#memoBox:focus{border-color:#85b7eb;background:#fff;}
+.cond-list{background:#ebe9e2;border-radius:10px;padding:10px 14px;
+  border:0.5px solid #ccc8be;font-size:12px;color:#5f5e5a;
+  line-height:1.9;margin-bottom:14px;}
+.cond-list .ci{display:flex;justify-content:space-between;}
+.cond-list .cl{color:#888780;}
+.cond-list .cv{font-weight:500;color:#2c2c2a;}
+
+/* ===== 相補フィルタ切替スイッチ ===== */
+.filter-row{display:flex;align-items:center;justify-content:space-between;
+  width:100%;max-width:320px;
+  background:#1e1e1e;border-radius:10px;padding:12px 16px;gap:12px}
+.filter-label{font-size:13px;color:#aaa;line-height:1.4}
+.filter-label span{display:block;font-size:11px;color:#555;margin-top:2px}
+/* トグルスイッチ */
+.toggle{position:relative;display:inline-block;width:44px;height:26px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{position:absolute;inset:0;background:#333;border-radius:13px;
+  transition:background .2s}
+.toggle input:checked + .toggle-track{background:#378add}
+.toggle-thumb{position:absolute;top:3px;left:3px;width:20px;height:20px;
+  background:#fff;border-radius:50%;transition:transform .2s;
+  pointer-events:none}
+.toggle input:checked ~ .toggle-thumb{transform:translateX(18px)}
+</style>
+
+<!-- 画面1: 待機 -->
+<div id="scrIdle" class="screen active">
+  <div class="title">身体運動 FRF 計測</div>
+  <div class="sub">2次元擬似ランダム系列に手首で追従してください。計測時間は約34秒です。</div>
+
+  <div class="filter-row">
+    <div class="filter-label">
+      相補フィルタ（ジャイロ＋加速度）
+      <span id="filterDesc">ON：IIRスムージング（手振れ除去）</span>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="filterToggle" checked onchange="onFilterToggle(this)">
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+
+  <div class="filter-row">
+    <div class="filter-label">
+      操作パラダイム
+      <span id="paradigmDesc">世界座標系が動く（赤点固定）</span>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="paradigmToggle" onchange="onParadigmToggle(this)">
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+
+  <div class="filter-row">
+    <div class="filter-label">
+      FRF 推定法
+      <span id="frfMethodDesc">ON：クロススペクトル H1 推定</span>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="frfMethodToggle" checked onchange="onFrfMethodToggle(this)">
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+
+  <button class="btn-start" onclick="startMeasure()">▶&nbsp;&nbsp;計測開始</button>
+</div>
+
+<!-- 画面2: 計測中 -->
+<div id="scrRec" class="screen">
+  <div id="recBar"></div>
+  <canvas id="recCanvas"></canvas>
+  <div id="recTime">0.0 s</div>
+  <button id="recStopBtn" onclick="stopMeasure()">■&nbsp;停止して FRF 計算</button>
+</div>
+
+<!-- 画面3: 結果 -->
+<div id="scrResult" class="screen">
+  <div class="sec-label">計測条件メモ</div>
+  <textarea id="memoBox" placeholder="計測条件メモ（例：被験者名、試行番号など）" rows="2"></textarea>
+  <div class="sec-label">クロスオーバーモデル パラメータ</div>
+  <div class="param-grid">
+    <div class="pc hi">
+      <div class="pl">クロスオーバー周波数 fc</div>
+      <div><span class="pv" id="pOmC">--</span><span class="pu">Hz</span></div>
+    </div>
+    <div class="pc hi">
+      <div class="pl">等価時間遅れ τe</div>
+      <div><span class="pv" id="pTau">--</span><span class="pu">s</span></div>
+    </div>
+  </div>
+
+  <div class="fit-info" id="fitInfo">--</div>
+
+  <div class="sec-label">Bode線図 — 開ループ伝達関数</div>
+  <div class="tab-row">
+    <button class="tab sel" id="tG" onclick="showTab('g')">ゲイン [dB]</button>
+    <button class="tab"     id="tP" onclick="showTab('p')">位相 [rad]</button>
+  </div>
+  
+  <canvas id="bCv" height="240"></canvas>
+
+  <button class="btn-retry" onclick="resetAll()">↺&nbsp;&nbsp;再計測</button>
+
+  <div class="sec-label">表示軸</div>
+  <div class="tab-row">
+    <button class="tab sel" id="tAX" onclick="showTab('x')">X軸（ロール）</button>
+    <button class="tab"     id="tAY" onclick="showTab('y')">Y軸（ピッチ）</button>
+  </div>
+
+  <div class="sec-label">計測条件</div>
+  <div class="cond-list" id="condList"></div>
+</div>
+
+<script>
+/* ==========================================================
+   定数 — calcTrajectory_GakuDoor.py と同一設定
+========================================================== */
+var T_SEC     = 30;
+var FS_TRAJ   = 60;
+var MAX_SPEED = 4;
+var MAX_FREQ  = 20;
+var FS_SENSOR = 50;
+var DT_SENSOR = 1 / FS_SENSOR;
+var SCALE     = 25;
+var MIN_PTS   = 4;
+
+var SAMPLE_NUM = (function(){
+  var i=0; while(Math.pow(2,i)<T_SEC*FS_TRAJ) i++; return Math.pow(2,i);
+})();
+var PERIOD   = SAMPLE_NUM / FS_TRAJ;
+var DUR      = PERIOD;
+var BASE_FREQ = FS_TRAJ / SAMPLE_NUM;
+
+var TRAJ_FREQS = (function(){
+  var a=[]; for(var k=0;k<1000;k++){var f=BASE_FREQ*Math.pow(2,k);if(f<MAX_FREQ)a.push(f);else break;} return a;
+})();
+var TRAJ_GAINS = TRAJ_FREQS.map(function(f){return MAX_SPEED/(f*TRAJ_FREQS.length);});
+
+function randPhases(n){var a=[];for(var k=0;k<n;k++)a.push(Math.random()*2*Math.PI-Math.PI);return a;}
+var PHX = randPhases(TRAJ_FREQS.length);
+var PHY = randPhases(TRAJ_FREQS.length);
+
+function getTarget(t){
+  var x=0,y=0;
+  for(var k=0;k<TRAJ_FREQS.length;k++){
+    var ph=2*Math.PI*TRAJ_FREQS[k]*t;
+    x+=TRAJ_GAINS[k]*Math.cos(ph+PHX[k]);
+    y+=TRAJ_GAINS[k]*Math.cos(ph+PHY[k]);
+  }
+  return {x:x,y:y};
+}
+
+/* ==========================================================
+   状態変数
+========================================================== */
+var state    = 'idle';
+var sensorOK = false;
+var t0       = 0;
+var samplesX = [];
+var samplesY = [];
+var curRoll  = 0;
+var curPitch = 0;
+var animId   = null;
+var recTimer = null;
+var bodeTab  = 'g';
+var axisTab  = 'x';
+var frfX     = null;
+var frfY     = null;
+var fitX     = null;
+var fitY     = null;
+
+/* トグル設定 */
+var useComplementary = true;
+var useWorldFixed    = true;
+var useH1Estimator   = true;
+
+/* センサーフュージョン用 */
+var fusRoll        = 0;
+var fusPitch       = 0;
+var ALPHA          = 0.75;
+var oriGamma       = 0;
+var oriBeta        = 0;
+var hasOrientation = false;
+
+/* Canvas 参照 */
+var recCv  = document.getElementById('recCanvas');
+var recCtx = recCv.getContext('2d');
+var bCv    = document.getElementById('bCv');
+var bCtx   = bCv.getContext('2d');
+
+/* ==========================================================
+   トグルコールバック
+========================================================== */
+function onFilterToggle(el){
+  useComplementary = el.checked;
+  fusRoll=0; fusPitch=0;
+  var desc = el.checked ? 'ON：IIRスムージング（手振れ除去）' : 'OFF（OS統合値そのまま）';
+  document.getElementById('filterDesc').textContent = desc;
+}
+function onParadigmToggle(el){
+  useWorldFixed = !el.checked;
+  var desc = useWorldFixed ? '世界座標系が動く（赤点固定）' : '赤点が動く（世界座標系固定）';
+  document.getElementById('paradigmDesc').textContent = desc;
+}
+function onFrfMethodToggle(el){
+  useH1Estimator = el.checked;
+  var desc = el.checked ? 'ON：クロススペクトル H1 推定' : 'OFF：直接推定 Y/(U−Y)';
+  document.getElementById('frfMethodDesc').textContent = desc;
+}
+
+/* ==========================================================
+   描画
+========================================================== */
+function drawRec(tgt, rollDeg, pitchDeg){
+  var dpr = devicePixelRatio||1;
+  var W   = window.innerWidth*dpr;
+  var H   = window.innerHeight*dpr;
+  recCv.width=W; recCv.height=H;
+  var cx=W/2, cy=H/2;
+  var halfShort = Math.min(W,H)*0.46;
+  function deg2px(d){return d/SCALE*halfShort;}
+
+  if(useWorldFixed){
+    /* パラダイムA: 世界座標系が動く・赤点固定 */
+    function w2sx(wx){return cx+deg2px(wx-rollDeg);}
+    function w2sy(wy){return cy-deg2px(wy-pitchDeg);}
+
+    recCtx.fillStyle='#000'; recCtx.fillRect(0,0,W,H);
+
+    /* グリッド */
+    var gs=SCALE, sp=SCALE*6;
+    recCtx.strokeStyle='rgba(255,255,255,.18)'; recCtx.lineWidth=Math.round(0.8*dpr);
+    var x0=Math.floor((rollDeg-sp)/gs), x1=Math.ceil((rollDeg+sp)/gs);
+    for(var i=x0;i<=x1;i++){var sx=w2sx(i*gs);if(sx<-10||sx>W+10)continue;recCtx.beginPath();recCtx.moveTo(sx,0);recCtx.lineTo(sx,H);recCtx.stroke();}
+    var y0=Math.floor((pitchDeg-sp)/gs), y1=Math.ceil((pitchDeg+sp)/gs);
+    for(var j=y0;j<=y1;j++){var sy=w2sy(j*gs);if(sy<-10||sy>H+10)continue;recCtx.beginPath();recCtx.moveTo(0,sy);recCtx.lineTo(W,sy);recCtx.stroke();}
+    recCtx.strokeStyle='rgba(255,255,255,.32)'; recCtx.lineWidth=Math.round(1.2*dpr);
+    var axX=w2sx(0),axY=w2sy(0);
+    recCtx.beginPath();recCtx.moveTo(axX,0);recCtx.lineTo(axX,H);recCtx.stroke();
+    recCtx.beginPath();recCtx.moveTo(0,axY);recCtx.lineTo(W,axY);recCtx.stroke();
+
+    /* 白円（ターゲット） */
+    var tx=w2sx(tgt.x), ty=w2sy(tgt.y);
+    var rT=Math.round(28*dpr), lw=Math.round(4*dpr);
+    recCtx.beginPath();recCtx.arc(tx,ty,rT,0,Math.PI*2);
+    recCtx.strokeStyle='rgba(255,255,255,1)';recCtx.lineWidth=lw;recCtx.stroke();
+    recCtx.beginPath();recCtx.arc(tx,ty,Math.round(3*dpr),0,Math.PI*2);
+    recCtx.fillStyle='rgba(255,255,255,.55)';recCtx.fill();
+
+    /* 赤点（固定） */
+    recCtx.beginPath();recCtx.arc(cx,cy,Math.round(14*dpr),0,Math.PI*2);
+    recCtx.fillStyle='#e03030';recCtx.fill();
+
+  } else {
+    /* パラダイムB: 赤点が動く・世界固定 */
+    function w2sx_b(wx){return cx+deg2px(wx);}
+    function w2sy_b(wy){return cy-deg2px(wy);}
+
+    recCtx.fillStyle='#000'; recCtx.fillRect(0,0,W,H);
+    var gs2=SCALE, sp2=SCALE*6;
+    recCtx.strokeStyle='rgba(255,255,255,.18)'; recCtx.lineWidth=Math.round(0.8*dpr);
+    var xi0=Math.floor(-sp2/gs2), xi1=Math.ceil(sp2/gs2);
+    for(var i=xi0;i<=xi1;i++){var sx=w2sx_b(i*gs2);if(sx<-10||sx>W+10)continue;recCtx.beginPath();recCtx.moveTo(sx,0);recCtx.lineTo(sx,H);recCtx.stroke();}
+    var yi0=Math.floor(-sp2/gs2), yi1=Math.ceil(sp2/gs2);
+    for(var j=yi0;j<=yi1;j++){var sy=w2sy_b(j*gs2);if(sy<-10||sy>H+10)continue;recCtx.beginPath();recCtx.moveTo(0,sy);recCtx.lineTo(W,sy);recCtx.stroke();}
+    recCtx.strokeStyle='rgba(255,255,255,.32)'; recCtx.lineWidth=Math.round(1.2*dpr);
+    recCtx.beginPath();recCtx.moveTo(cx,0);recCtx.lineTo(cx,H);recCtx.stroke();
+    recCtx.beginPath();recCtx.moveTo(0,cy);recCtx.lineTo(W,cy);recCtx.stroke();
+
+    /* 白円（固定） */
+    var tx2=w2sx_b(tgt.x), ty2=w2sy_b(tgt.y);
+    var rT2=Math.round(28*dpr), lw2=Math.round(4*dpr);
+    recCtx.beginPath();recCtx.arc(tx2,ty2,rT2,0,Math.PI*2);
+    recCtx.strokeStyle='rgba(255,255,255,1)';recCtx.lineWidth=lw2;recCtx.stroke();
+    recCtx.beginPath();recCtx.arc(tx2,ty2,Math.round(3*dpr),0,Math.PI*2);
+    recCtx.fillStyle='rgba(255,255,255,.55)';recCtx.fill();
+
+    /* 赤点（傾きで移動） */
+    var mx=w2sx_b(rollDeg), my=w2sy_b(pitchDeg);
+    recCtx.beginPath();recCtx.arc(mx,my,Math.round(14*dpr),0,Math.PI*2);
+    recCtx.fillStyle='#e03030';recCtx.fill();
+  }
+}
+
+/* ==========================================================
+   アニメーションループ
+========================================================== */
+function loop(){
+  var now=performance.now()/1000;
+  var t=(t0>0)?(now-t0)%PERIOD:0;
+  var tgt=getTarget(t);
+  if(state==='recording') drawRec(tgt,curRoll,curPitch);
+  animId=requestAnimationFrame(loop);
+}
+
+/* ==========================================================
+   センサー
+========================================================== */
+function onOrientation(e){
+  if(e.gamma===null||e.beta===null) return;
+  oriGamma=e.gamma; oriBeta=e.beta; hasOrientation=true;
+}
+
+function onMotion(e){
+  if(!e.accelerationIncludingGravity) return;
+  var ts=(e.timeStamp!=null)?e.timeStamp/1000:performance.now()/1000;
+  var roll, pitch;
+
+  if(hasOrientation){
+    if(useComplementary){
+      fusRoll  = ALPHA*fusRoll  + (1-ALPHA)*oriGamma;
+      fusPitch = ALPHA*fusPitch + (1-ALPHA)*oriBeta;
+      roll=fusRoll; pitch=fusPitch;
+    } else {
+      roll=oriGamma; pitch=oriBeta;
+    }
+  } else {
+    var ax=e.accelerationIncludingGravity.x||0;
+    var ay=e.accelerationIncludingGravity.y||0;
+    var az=e.accelerationIncludingGravity.z||9.8;
+    var absAz=Math.abs(az);
+    roll =Math.atan2( ax,absAz)*180/Math.PI;
+    pitch=Math.atan2(-ay,absAz)*180/Math.PI;
+    if(useComplementary){
+      fusRoll=ALPHA*fusRoll+(1-ALPHA)*roll;
+      fusPitch=ALPHA*fusPitch+(1-ALPHA)*pitch;
+      roll=fusRoll; pitch=fusPitch;
+    }
+  }
+  curRoll=roll; curPitch=pitch;
+  if(state==='recording'&&t0>0){
+    var dt=ts-t0;
+    if(dt>=0){samplesX.push({t:dt,y:roll});samplesY.push({t:dt,y:pitch});}
+  }
+}
+
+/* ==========================================================
+   センサー許可
+========================================================== */
+async function reqSensor(){
+  if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
+    try{var r=await DeviceMotionEvent.requestPermission();if(r!=='granted')return false;}
+    catch(e){return false;}
+  }
+  if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+    try{await DeviceOrientationEvent.requestPermission();}catch(e){}
+  }
+  return true;
+}
+
+/* ==========================================================
+   画面切替
+========================================================== */
+function showScreen(id){
+  ['scrIdle','scrRec','scrResult'].forEach(function(s){
+    var el=document.getElementById(s);
+    el.classList.remove('active');
+    el.style.display='';
+  });
+  var el=document.getElementById(id);
+  el.classList.add('active');
+  el.style.display=(id==='scrRec')?'block':'flex';
+}
+
+/* ==========================================================
+   計測開始 / 停止 / リセット
+========================================================== */
+async function startMeasure(){
+  if(!sensorOK){
+    var ok=await reqSensor();
+    if(!ok){alert('センサー許可が必要です');return;}
+    sensorOK=true;
+    window.addEventListener('devicemotion',onMotion,{passive:true});
+    window.addEventListener('deviceorientation',onOrientation,{passive:true});
+  }
+  PHX=randPhases(TRAJ_FREQS.length);
+  PHY=randPhases(TRAJ_FREQS.length);
+  samplesX=[];samplesY=[];
+  curRoll=0;curPitch=0;
+  t0=performance.now()/1000;
+  state='recording';
+  showScreen('scrRec');
+  var el=document.documentElement;
+  if(el.requestFullscreen)el.requestFullscreen().catch(function(){});
+  else if(el.webkitRequestFullscreen)el.webkitRequestFullscreen();
+  if(!animId)loop();
+  document.getElementById('recBar').style.width='0%';
+  document.getElementById('recTime').textContent='0.0 s';
+  recTimer=setInterval(function(){
+    var elapsed=performance.now()/1000-t0;
+    var pct=Math.min(100,elapsed/DUR*100);
+    document.getElementById('recBar').style.width=pct.toFixed(1)+'%';
+    document.getElementById('recTime').textContent=elapsed.toFixed(1)+' s';
+    if(elapsed>=DUR)stopMeasure();
+  },200);
+}
+
+function stopMeasure(){
+  if(!recTimer)return;
+  clearInterval(recTimer);recTimer=null;
+  state='computing';
+  if(document.exitFullscreen)document.exitFullscreen().catch(function(){});
+  else if(document.webkitExitFullscreen)document.webkitExitFullscreen();
+  computeAll();
+}
+
+function resetAll(){
+  state='idle';curRoll=0;curPitch=0;
+  samplesX=[];samplesY=[];
+  frfX=null;frfY=null;fitX=null;fitY=null;t0=0;
+  fusRoll=0;fusPitch=0;
+  oriGamma=0;oriBeta=0;hasOrientation=false;
+  showScreen('scrIdle');
+}
+
+/* ==========================================================
+   FFT
+========================================================== */
+function fft(re,im){
+  var n=re.length;if(n<=1)return;
+  var h=n>>1;
+  var reE=new Float64Array(h),imE=new Float64Array(h),reO=new Float64Array(h),imO=new Float64Array(h);
+  for(var i=0;i<h;i++){reE[i]=re[2*i];imE[i]=im[2*i];reO[i]=re[2*i+1];imO[i]=im[2*i+1];}
+  fft(reE,imE);fft(reO,imO);
+  for(var k=0;k<h;k++){
+    var a=-2*Math.PI*k/n,wr=Math.cos(a),wi=Math.sin(a);
+    var tr=wr*reO[k]-wi*imO[k],ti=wr*imO[k]+wi*reO[k];
+    re[k]=reE[k]+tr;im[k]=imE[k]+ti;re[k+h]=reE[k]-tr;im[k+h]=imE[k]-ti;
+  }
+}
+function np2(n){var p=1;while(p<n)p<<=1;return p;}
+
+/* ==========================================================
+   FRF計算（1軸）
+========================================================== */
+function calcFRF(uArrIn,sArr,excFreqs){
+  if(sArr.length<64)return null;
+  var tEnd=sArr[sArr.length-1].t;
+  var N0=Math.floor(tEnd*FS_SENSOR);
+  if(N0<64)return null;
+
+  var uArr=new Float64Array(N0),yArr=new Float64Array(N0);
+  var si=0;
+  for(var n=0;n<N0;n++){
+    var tn=n*DT_SENSOR;
+    uArr[n]=(uArrIn[n]!==undefined)?uArrIn[n]:0;
+    while(si<sArr.length-2&&sArr[si+1].t<tn)si++;
+    var s0=sArr[si],s1=sArr[Math.min(si+1,sArr.length-1)];
+    var span=s1.t-s0.t;
+    var al=(span>1e-6)?Math.max(0,Math.min(1,(tn-s0.t)/span)):0;
+    yArr[n]=s0.y+al*(s1.y-s0.y);
+  }
+
+  var um=0,ym=0;
+  for(var i=0;i<N0;i++){um+=uArr[i];ym+=yArr[i];}
+  um/=N0;ym/=N0;
+  for(var i=0;i<N0;i++){uArr[i]-=um;yArr[i]-=ym;}
+
+  var N=np2(N0);
+  var Ur=new Float64Array(N),Ui=new Float64Array(N),Yr=new Float64Array(N),Yi=new Float64Array(N);
+  for(var i=0;i<N0;i++){
+    var w=0.5-0.5*Math.cos(2*Math.PI*i/(N0-1));
+    Ur[i]=uArr[i]*w;Yr[i]=yArr[i]*w;
+  }
+  fft(Ur,Ui);fft(Yr,Yi);
+
+  var df=FS_SENSOR/N;
+  var freqs=[],gains_dB=[],phases_rad=[],excF=[],excG_dB=[],excP_rad=[];
+
+  for(var k=1;k<N/2;k++){
+    var f=k*df;if(f>MAX_FREQ*1.1)break;
+    var ur=Ur[k],ui=Ui[k],yr=Yr[k],yi=Yi[k];
+    var Gr,Gi;
+    if(useH1Estimator){
+      /* 方法A: G_OL = S_yu / (S_uu - S_yu) */
+      var Syu_r=yr*ur+yi*ui,Syu_i=yi*ur-yr*ui;
+      var Suu=ur*ur+ui*ui;if(Suu<1e-10)continue;
+      var Dr=Suu-Syu_r,Di=-Syu_i,D2=Dr*Dr+Di*Di;if(D2<1e-14)continue;
+      Gr=(Syu_r*Dr+Syu_i*Di)/D2;Gi=(Syu_i*Dr-Syu_r*Di)/D2;
+    } else {
+      /* 方法B: G_OL = Y / (U - Y) */
+      var Dur=ur-yr,Dui=ui-yi,D2b=Dur*Dur+Dui*Dui;if(D2b<1e-14)continue;
+      Gr=(yr*Dur+yi*Dui)/D2b;Gi=(yi*Dur-yr*Dui)/D2b;
+    }
+    var mag=Math.sqrt(Gr*Gr+Gi*Gi),ph=Math.atan2(Gi,Gr);
+    if(!isFinite(mag)||mag<1e-6)continue;
+    if(ph>0)ph-=2*Math.PI;
+    freqs.push(f);gains_dB.push(20*Math.log10(mag));phases_rad.push(ph);
+  }
+
+  for(var ei=0;ei<excFreqs.length;ei++){
+    var ef=excFreqs[ei],bi=-1,bd=1e9;
+    for(var ki=0;ki<freqs.length;ki++){var d=Math.abs(freqs[ki]-ef);if(d<bd){bd=d;bi=ki;}}
+    if(bi>=0&&bd<df*1.5){excF.push(ef);excG_dB.push(gains_dB[bi]);excP_rad.push(phases_rad[bi]);}
+  }
+  return{freqs:freqs,gains_dB:gains_dB,phases_rad:phases_rad,excF:excF,excG_dB:excG_dB,excP_rad:excP_rad};
+}
+
+/* ==========================================================
+   メイン解析
+========================================================== */
+function computeAll(){
+  var tEnd=Math.max(
+    samplesX.length?samplesX[samplesX.length-1].t:0,
+    samplesY.length?samplesY[samplesY.length-1].t:0
+  );
+  var N0=Math.floor(tEnd*FS_SENSOR);
+  var uX=new Array(N0),uY=new Array(N0);
+  for(var n=0;n<N0;n++){
+    var tn=n*DT_SENSOR;
+    var tg=getTarget(tn%PERIOD);
+    uX[n]=tg.x;uY[n]=tg.y;
+  }
+  frfX=calcFRF(uX,samplesX,TRAJ_FREQS);
+  frfY=calcFRF(uY,samplesY,TRAJ_FREQS);
+  axisTab='x';
+  fitX=frfX?fitCrossover(frfX.excF,frfX.excG_dB,frfX.excP_rad):null;
+  fitY=frfY?fitCrossover(frfY.excF,frfY.excG_dB,frfY.excP_rad):null;
+  showResults();
+}
+
+/* ==========================================================
+   クロスオーバーモデルフィッティング
+========================================================== */
+function fitCrossover(excF,excG_dB,excP_rad){
+  var nF=excF.length;if(nF<MIN_PTS+1)return null;
+  var omegas=excF.map(function(f){return 2*Math.PI*f;});
+  var bestAmp={rmse:1e9},bestPhase={rmse:1e9};
+  for(var i=0;i<nF;i++){
+    for(var j=0;j<nF;j++){
+      if(i+j>=nF)continue;
+      var n=nF-i-j;if(n<=MIN_PTS)continue;
+      var sw=omegas.slice(i,nF-j);
+      var sgl=excG_dB.slice(i,nF-j).map(function(d){return d/20;});
+      var spr=excP_rad.slice(i,nF-j);
+      var sumB=0;for(var k=0;k<n;k++)sumB+=sgl[k]+Math.log10(sw[k]);
+      var amp_b=sumB/n,omega_c=Math.pow(10,amp_b);
+      var aSS=0;for(var k=0;k<n;k++){var d=-Math.log10(sw[k])+amp_b-sgl[k];aSS+=d*d;}
+      var aR=Math.sqrt(aSS/n);
+      var sx=0,sy=0,sxx=0,sxy=0;
+      for(var k=0;k<n;k++){sx+=sw[k];sy+=spr[k];sxx+=sw[k]*sw[k];sxy+=sw[k]*spr[k];}
+      var den=n*sxx-sx*sx;
+      var pa=(Math.abs(den)>1e-14)?(n*sxy-sx*sy)/den:0,pb=(sy-pa*sx)/n;
+      var pSS=0;for(var k=0;k<n;k++){var d2=spr[k]-(pa*sw[k]+pb);pSS+=d2*d2;}
+      var pR=Math.sqrt(pSS/n);
+      if(aR<bestAmp.rmse)bestAmp={rmse:aR,amp_b:amp_b,omega_c:omega_c,n:n,sw:sw.slice()};
+      if(pR<bestPhase.rmse)bestPhase={rmse:pR,pa:pa,pb:pb,tau_e:pa,n:n,sw:sw.slice()};
+    }
+  }
+  return(bestAmp.rmse<1e8&&bestPhase.rmse<1e8)?{amp:bestAmp,phase:bestPhase}:null;
+}
+
+/* ==========================================================
+   結果表示
+========================================================== */
+function showResults(){
+  showScreen('scrResult');
+  updateResultPanel();
+  requestAnimationFrame(function(){drawBode();});
+}
+
+function updateResultPanel(){
+  var fit=(axisTab==='x')?fitX:fitY;
+  var lbl=(axisTab==='x')?'X\u8ef8\uff08\u30ed\u30fc\u30eb\uff09':'Y\u8ef8\uff08\u30d4\u30c3\u30c1\uff09';
+  var pOmC=document.getElementById('pOmC');
+  var pTau=document.getElementById('pTau');
+  var fitInfo=document.getElementById('fitInfo');
+
+  if(!fit){
+    pOmC.textContent='--'; pTau.textContent='--';
+    fitInfo.textContent=lbl+' \u2014 \u8a08\u7b97\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\uff08\u30c7\u30fc\u30bf\u4e0d\u8db3\uff09';
+    updateCondList();
+    return;
+  }
+  var a=fit.amp,p=fit.phase;
+  var fc=a.omega_c/(2*Math.PI);
+  pOmC.textContent=fc.toFixed(3);
+  pTau.textContent=p.tau_e.toFixed(3);
+  fitInfo.textContent=
+    '['+lbl+']\n'+
+    '\u30af\u30ed\u30b9\u30aa\u30fc\u30d0\u30fc\u5468\u6ce2\u6570 fc = '+fc.toFixed(3)+' Hz\n'+
+    '\u30af\u30ed\u30b9\u30aa\u30fc\u30d0\u30fc\u89d2\u5468\u6ce2\u6570 \u03c9c = '+a.omega_c.toFixed(3)+' rad/s\n'+
+    '\u7b49\u4fa1\u9045\u308c\u6642\u9593 \u03c4e = '+p.tau_e.toFixed(4)+' s\n'+
+    '\u30b2\u30a4\u30f3\u56de\u5e30: log10|G| = \u22121\u00b7log10(\u03c9) + '+a.amp_b.toFixed(4)+
+      '  ('+a.n+' \u70b9, RMSE '+a.rmse.toFixed(4)+')\n'+
+    '\u4f4d\u76f8\u56de\u5e30: \u2220G = '+p.pa.toFixed(5)+'\u00b7\u03c9 + '+p.pb.toFixed(3)+
+      ' rad  ('+p.n+' \u70b9, RMSE '+p.rmse.toFixed(4)+')';
+  updateCondList();
+}
+
+function updateCondList(){
+  var el=document.getElementById('condList');
+  if(!el)return;
+  var items=[
+    ['\u76f8\u88dc\u30d5\u30a3\u30eb\u30bf',
+      useComplementary?'ON\uff08IIR\u30b9\u30e0\u30fc\u30b8\u30f3\u30b0\uff09':'OFF\uff08OS\u7d71\u5408\u5024\uff09'],
+    ['\u64cd\u4f5c\u30d1\u30e9\u30c0\u30a4\u30e0',
+      useWorldFixed?'\u4e16\u754c\u5ea7\u6a19\u7cfb\u304c\u52d5\u304f\uff08\u8d64\u70b9\u56fa\u5b9a\uff09':'\u8d64\u70b9\u304c\u52d5\u304f\uff08\u4e16\u754c\u56fa\u5b9a\uff09'],
+    ['FRF\u63a8\u5b9a\u6cd5',
+      useH1Estimator?'\u30af\u30ed\u30b9\u30b9\u30da\u30af\u30c8\u30eb H1 \u63a8\u5b9a':'\u76f4\u63a5\u63a8\u5b9a Y/(U\u2212Y)'],
+    ['\u8868\u793a\u8ef8',
+      axisTab==='x'?'X\u8ef8\uff08\u30ed\u30fc\u30eb\uff09':'Y\u8ef8\uff08\u30d4\u30c3\u30c1\uff09'],
+  ];
+  el.innerHTML=items.map(function(it){
+    return '<div class="ci"><span class="cl">'+it[0]+'</span><span class="cv">'+it[1]+'</span></div>';
+  }).join('');
+}
+
+/* ==========================================================
+   タブ切替
+========================================================== */
+function showTab(tab){
+  if(tab==='x'||tab==='y'){
+    axisTab=tab;
+    updateResultPanel();
+  } else {
+    bodeTab=tab;
+    updateCondList();
+  }
+  var ids=['tG','tP','tAX','tAY'];
+  for(var ii=0;ii<ids.length;ii++){
+    var el=document.getElementById(ids[ii]);
+    if(el)el.className='tab';
+  }
+  var map={g:'tG',p:'tP',x:'tAX',y:'tAY'};
+  var sel=document.getElementById(map[tab]);
+  if(sel)sel.className='tab sel';
+  drawBode();
+}
+
+/* ==========================================================
+   Bode 描画
+========================================================== */
+function drawBode(){
+  var frf=(axisTab==='x')?frfX:frfY;
+  var fit=(axisTab==='x')?fitX:fitY;
+  var dpr=devicePixelRatio||1;
+  var W=(bCv.offsetWidth||320)*dpr;
+  var H=Math.round(W*0.68);
+  bCv.width=W;bCv.height=H;
+  var PAD={l:70*dpr,r:16*dpr,t:22*dpr,b:58*dpr};
+  var pw=W-PAD.l-PAD.r,ph=H-PAD.t-PAD.b;
+
+  bCtx.fillStyle='#ebe9e2';bCtx.fillRect(0,0,W,H);
+
+  if(!frf){
+    bCtx.fillStyle='#888780';bCtx.font=(14*dpr)+'px sans-serif';bCtx.textAlign='center';
+    bCtx.fillText('\u30c7\u30fc\u30bf\u306a\u3057',W/2,H/2);
+    return;
+  }
+
+  var gc='rgba(0,0,0,.06)',axC='#888780';
+  var isGain=(bodeTab==='g');
+  var data  =isGain?frf.gains_dB  :frf.phases_rad;
+  var excDat=isGain?frf.excG_dB   :frf.excP_rad;
+
+  var lFmn=Math.log10(0.05),lFmx=Math.log10(MAX_FREQ);
+  function fx(f){return PAD.l+(Math.log10(Math.max(f,0.001))-lFmn)/(lFmx-lFmn)*pw;}
+
+  var dMin,dMax;
+  if(isGain){
+    var vl=frf.gains_dB.filter(isFinite);
+    dMin=Math.min(-35,vl.length?Math.min.apply(null,vl):-35)-3;
+    dMax=Math.max(25, vl.length?Math.max.apply(null,vl):25)+3;
+  }else{
+    var vl2=frf.phases_rad.filter(isFinite);
+    dMin=Math.min(-4*Math.PI,vl2.length?Math.min.apply(null,vl2):-4*Math.PI)-0.3;
+    dMax=0.5;
+  }
+  function fy(v){return PAD.t+(1-(v-dMin)/(dMax-dMin))*ph;}
+
+  /* グリッド */
+  [0.05,0.1,0.2,0.5,1,2,5,10,20].forEach(function(f){
+    if(f>MAX_FREQ*1.05)return;
+    var x=fx(f);
+    bCtx.strokeStyle=gc;bCtx.lineWidth=1;
+    bCtx.beginPath();bCtx.moveTo(x,PAD.t);bCtx.lineTo(x,PAD.t+ph);bCtx.stroke();
+    bCtx.fillStyle=axC;bCtx.font=(9*dpr)+'px sans-serif';bCtx.textAlign='center';
+    bCtx.fillText(String(f),x,PAD.t+ph+14*dpr);
+  });
+  var yStep=isGain?20:(Math.PI/2);
+  for(var v=Math.ceil(dMin/yStep)*yStep;v<=dMax+yStep*0.01;v+=yStep){
+    var y=fy(v);
+    bCtx.strokeStyle=gc;bCtx.lineWidth=1;
+    bCtx.beginPath();bCtx.moveTo(PAD.l,y);bCtx.lineTo(PAD.l+pw,y);bCtx.stroke();
+    bCtx.fillStyle=axC;bCtx.font=(9*dpr)+'px sans-serif';bCtx.textAlign='right';
+    var lbl=isGain?String(Math.round(v)):(Math.abs(v)<0.01?'0':(v/Math.PI).toFixed(1)+'\u03c0');
+    bCtx.fillText(lbl,PAD.l-5*dpr,y+4*dpr);
+  }
+
+  /* 軸ラベル（2倍・黒） */
+  bCtx.fillStyle='#000';bCtx.font=(20*dpr)+'px sans-serif';bCtx.textAlign='center';
+  bCtx.fillText('\u5468\u6ce2\u6570 [Hz]',PAD.l+pw/2,H-8*dpr);
+  bCtx.save();bCtx.translate(22*dpr,PAD.t+ph/2);bCtx.rotate(-Math.PI/2);
+  bCtx.fillText(isGain?'\u30b2\u30a4\u30f3 [dB]':'\u4f4d\u76f8 [rad]',0,0);
+  bCtx.restore();
+
+  /* 参照線 */
+  bCtx.setLineDash([4*dpr,4*dpr]);bCtx.lineWidth=1;
+  if(isGain){
+    bCtx.strokeStyle='rgba(0,0,0,.18)';var y0=fy(0);
+    bCtx.beginPath();bCtx.moveTo(PAD.l,y0);bCtx.lineTo(PAD.l+pw,y0);bCtx.stroke();
+  }else{
+    bCtx.strokeStyle='rgba(212,83,126,.5)';var ynp=fy(-Math.PI);
+    bCtx.beginPath();bCtx.moveTo(PAD.l,ynp);bCtx.lineTo(PAD.l+pw,ynp);bCtx.stroke();
+    bCtx.fillStyle='#D4537E';bCtx.font=(9*dpr)+'px sans-serif';bCtx.textAlign='left';
+    bCtx.fillText('-\u03c0',PAD.l+3*dpr,ynp-3*dpr);
+  }
+  bCtx.setLineDash([]);
+
+  /* FRF連続線 */
+  bCtx.strokeStyle='rgba(55,138,221,.3)';bCtx.lineWidth=1.5*dpr;
+  bCtx.beginPath();var started=false;
+  for(var i=0;i<frf.freqs.length;i++){
+    var ff=frf.freqs[i],vv=data[i];
+    if(!isFinite(vv)||ff<0.04||ff>MAX_FREQ*1.05)continue;
+    var xp=fx(ff),yp=fy(vv);
+    if(!started){bCtx.moveTo(xp,yp);started=true;}else bCtx.lineTo(xp,yp);
+  }
+  bCtx.stroke();
+
+  /* 励振周波数● */
+  bCtx.fillStyle='#378add';
+  for(var ei=0;ei<frf.excF.length;ei++){
+    if(!isFinite(excDat[ei]))continue;
+    bCtx.beginPath();bCtx.arc(fx(frf.excF[ei]),fy(excDat[ei]),4.5*dpr,0,Math.PI*2);bCtx.fill();
+  }
+
+  /* フィッティング直線（橙） */
+  if(fit){
+    bCtx.strokeStyle='#EF9F27';bCtx.lineWidth=2.2*dpr;
+    if(isGain&&fit.amp){
+      var a=fit.amp,wL=a.sw[0],wH=a.sw[a.sw.length-1];
+      bCtx.beginPath();
+      bCtx.moveTo(fx(wL/(2*Math.PI)),fy(20*(-Math.log10(wL)+a.amp_b)));
+      bCtx.lineTo(fx(wH/(2*Math.PI)),fy(20*(-Math.log10(wH)+a.amp_b)));
+      bCtx.stroke();
+      var xc=fx(a.omega_c/(2*Math.PI));
+      bCtx.setLineDash([3*dpr,3*dpr]);bCtx.lineWidth=1.5*dpr;
+      bCtx.beginPath();bCtx.moveTo(xc,PAD.t);bCtx.lineTo(xc,PAD.t+ph);bCtx.stroke();
+      bCtx.setLineDash([]);
+      bCtx.fillStyle='#EF9F27';bCtx.font=(9*dpr)+'px sans-serif';bCtx.textAlign='center';
+      bCtx.fillText('\u03c9c='+a.omega_c.toFixed(1),xc,PAD.t+11*dpr);
+    }
+    if(!isGain&&fit.phase){
+      var p=fit.phase,wL=p.sw[0],wH=p.sw[p.sw.length-1];
+      bCtx.beginPath();
+      bCtx.moveTo(fx(wL/(2*Math.PI)),fy(p.pa*wL+p.pb));
+      bCtx.lineTo(fx(wH/(2*Math.PI)),fy(p.pa*wH+p.pb));
+      bCtx.stroke();
+      bCtx.fillStyle='#EF9F27';bCtx.font=(9*dpr)+'px sans-serif';bCtx.textAlign='left';
+      bCtx.fillText('\u03c4e='+p.tau_e.toFixed(3)+'s',fx(wL/(2*Math.PI))+4*dpr,fy(p.pa*wL+p.pb)-6*dpr);
+    }
+  }
+
+  /* 枠 */
+  bCtx.strokeStyle='rgba(0,0,0,.1)';bCtx.lineWidth=0.5;
+  bCtx.strokeRect(PAD.l,PAD.t,pw,ph);
+}
+
+window.addEventListener('resize',function(){if(frfX||frfY)drawBode();});
+loop();
+</script>
